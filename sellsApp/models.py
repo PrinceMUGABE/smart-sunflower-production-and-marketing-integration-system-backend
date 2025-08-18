@@ -160,7 +160,7 @@ class Sell(models.Model):
             self.delivery_date = self.calculate_delivery_date()
     
     def save(self, *args, **kwargs):
-        """Calculate total amount and update stock on completion."""
+        """Calculate total amount and update stock on creation/completion."""
         # Calculate total amount
         self.total_amount = self.quantity_sold * self.unit_price
         
@@ -201,13 +201,34 @@ class Sell(models.Model):
         
         super().save(*args, **kwargs)
         
-        # Create stock movement when sell is completed (only once)
-        if (self.sell_status == 'completed' and 
-            (is_new or old_status != 'completed')):
-            self._create_stock_movement()
-    
-    def _create_stock_movement(self):
-        """Create stock movement for completed sell."""
+        # Create stock movement when sell is first created (posted status)
+        if is_new and self.sell_status == 'posted':
+            self._create_stock_movement_on_creation()
+        
+        # Create additional stock movement when sell is completed (if not already created on posting)
+        elif (self.sell_status == 'completed' and 
+              (old_status and old_status != 'completed')):
+            # Only create completion movement if we didn't already create one on posting
+            # This is for cases where sell goes directly to completed status
+            if old_status != 'posted':
+                self._create_stock_movement_on_completion()
+
+    def _create_stock_movement_on_creation(self):
+        """Create stock movement for newly created sell (reserves stock)."""
+        try:
+            buyer_info = self.buyer.phone_number if self.buyer else "Posted for Sale"
+            HarvestMovement.objects.create(
+                stock=self.harvest_stock,
+                movement_type='out',
+                quantity=self.quantity_sold,
+                notes=f"Stock reserved for sale - Sell ID: {self.id} - {buyer_info}",
+                created_by=self.farmer
+            )
+        except Exception as e:
+            print(f"Error creating stock movement for new sell {self.id}: {str(e)}")
+
+    def _create_stock_movement_on_completion(self):
+        """Create stock movement for completed sell (for direct completion without posting)."""
         try:
             buyer_info = self.buyer.phone_number if self.buyer else self.buyer_name
             HarvestMovement.objects.create(
@@ -218,7 +239,12 @@ class Sell(models.Model):
                 created_by=self.farmer
             )
         except Exception as e:
-            print(f"Error creating stock movement for sell {self.id}: {str(e)}")
+            print(f"Error creating stock movement for completed sell {self.id}: {str(e)}")
+
+    # Keep the original method for backward compatibility
+    def _create_stock_movement(self):
+        """Create stock movement for completed sell."""
+        self._create_stock_movement_on_completion()
     
     def purchase_by_buyer(self, buyer_user, delivery_address):
         """Method to handle buyer purchasing this sell."""

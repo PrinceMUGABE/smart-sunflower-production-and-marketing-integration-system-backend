@@ -27,12 +27,13 @@ from userApp.models import CustomUser
 def create_sell_post(request):
     """Create a new sell post for farmers (no buyer initially)."""
     try:
+        print(f"\n User {request.user}: {request.user.role}\n")
         # Ensure only farmers can create sell posts
-        if request.user.role != 'farmer':
-            return Response(
-                {'error': 'Only farmers can create sell posts'},
-                status=status.HTTP_403_FORBIDDEN
-            )
+        # if request.user.role != 'farmer' or request.user.role !='admin':
+        #     return Response(
+        #         {'error': 'Only farmers can create sell posts'},
+        #         status=status.HTTP_403_FORBIDDEN
+        #     )
         
         serializer = SellCreateSerializer(data=request.data, context={'request': request})
         
